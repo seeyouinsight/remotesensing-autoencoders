@@ -1,27 +1,19 @@
-# from scipy.io import loadmat
-# import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from time import time
-# from pyrsgis import raster
-# import earthpy.plot as ep
 import rasterio as rio
 
 import tensorflow as tf
-# from tensorflow import keras
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
 
 from sklearn.preprocessing import minmax_scale
-# from sklearn.preprocessing import StandardScaler
-# from sklearn.model_selection import train_test_split
-# from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 from sklearn import cluster
 from sklearn.decomposition import PCA
 
 # Importing the data
-data_raster = rio.open('D:/Publications/ISI Journals/2021p - Autoencoders with Sandeep/RS/Landsat 8/Subset_TIFF.tif')
+data_raster = rio.open('Image.tif')
 # print(data_raster.meta)
 
 ## Visualizing the data
@@ -43,6 +35,7 @@ for band in range(imgxyb.shape[2]):
 
 # Reshaping the input data from rcb to samples and features
 data_reshaped = imgxyb.reshape(imgxyb.shape[0]*imgxyb.shape[1], -1)
+# Scaling
 data_reshaped = minmax_scale(data_reshaped, feature_range=(0, 1), axis=0, copy=False)
 
 def plot_data(data):
@@ -52,7 +45,7 @@ def plot_data(data):
   plt.axis('off')
   plt.show()
 
-# scikit-learn
+# PCA
 pca = PCA(n_components=data_array.shape[0])
 components = pca.fit_transform(data_reshaped)
 var_ratio = pca.explained_variance_ratio_
@@ -63,7 +56,6 @@ cl = cluster.KMeans(n_clusters=10) # Creating an object of the classifier
 components_num = 4
 param = cl.fit(components[:,:components_num]) # Training
 img_cl = cl.labels_ # Getting the labels of the classes
-# img_cl_pred = cl.predict(data_ae)
 img_cl = img_cl.reshape(data_array[0,:,:].shape) # Reshaping the labels to a 3D array (single band)
 plot_data(img_cl)
 
@@ -113,13 +105,13 @@ early_stop = EarlyStopping(monitor = 'mean_squared_logarithmic_error',
                             restore_best_weights = True)
 
 ## Checkpoint
-checkpoint = ModelCheckpoint(filepath = 'D:/Publications/ISI Journals/2021p - Autoencoders with Sandeep/Python/checkpoint.h5', 
+checkpoint = ModelCheckpoint(filepath = 'Path/checkpoint.h5', 
                              monitor = 'mean_squared_logarithmic_error', 
                              mode ='min', 
                              save_best_only = True)
 
 ## Tensorboard
-tensorboard = TensorBoard(log_dir='D:\Publications\ISI Journals\2021p - Autoencoders with Sandeep\Python\{}'.format(time()))
+tensorboard = TensorBoard(log_dir='Path\{}'.format(time()))
 
 # Fitting the model
 hist = autoencoder.fit(data_reshaped, 
