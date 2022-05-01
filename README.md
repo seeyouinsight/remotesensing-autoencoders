@@ -3,4 +3,4 @@ Remote sensing with variational autoencoders and flows for mineral exploration
 
 run file
 
-    vae_k_mean_geochem_ver_04.py
+    AE_K-Mean_GeoChem_ver_04.ipynb
