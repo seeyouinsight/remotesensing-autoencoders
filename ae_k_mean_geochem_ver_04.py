@@ -30,6 +30,13 @@ from sklearn.preprocessing import minmax_scale
 from sklearn import cluster
 from sklearn.decomposition import PCA
 
+from sklearn import cluster
+from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_samples, silhouette_score, rand_score, adjusted_rand_score
+from sklearn.metrics import mutual_info_score, adjusted_mutual_info_score, calinski_harabasz_score, davies_bouldin_score
+from sklearn.preprocessing import minmax_scale
+import matplotlib.cm as cm
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -64,25 +71,25 @@ Hyper-spectral image (HSI) satellite
 
 !pip install hyperspy
 
-import hyperspy.api as hs
-import numpy as np
-import matplotlib.pyplot as plt
-from PIL import Image
+# import hyperspy.api as hs
+# import numpy as np
+# import matplotlib.pyplot as plt
+# from PIL import Image
 
-img_15 = Image.open('drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_15m.tif')
-img_30 = Image.open('drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_30m.tif')
-# Loading data
-# s = hs.load("drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_15m.tif")
+# img_15 = Image.open('drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_15m.tif')
+# img_30 = Image.open('drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_30m.tif')
+# # Loading data
+# # s = hs.load("drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_15m.tif")
 
-# img.save("drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_30m.png")
-img_15
+# # img.save("drive/MyDrive/VAE_GeoChem/Wilcannia_RockUnits_30m.png")
+# img_15
 
-# im = Image.open('tmp.png')
-# im.show()
+# # im = Image.open('tmp.png')
+# # im.show()
 
-img_30
+# img_30
 
-"""## load the data"""
+"""## Load the data"""
 
 # Importing the data
 import rasterio as rio
@@ -111,6 +118,8 @@ vmin, vmax = np.nanpercentile(data_array_test, (1,99)) # 5-95% pixel values stre
 
 Extracting pixels of the HSI is one of the important preprocessing tasks. This makes easier to handle the data and also to implement machine learning algorithms such as classification, clustering e.t.c
 """
+
+# Reshape the input data from rcb to samples and features
 
 imgxyb = np.empty((data_raster.height, data_raster.width, data_raster.count), data_raster.meta['dtype'])
 # Looping through the bands to fill the empty array
@@ -168,13 +177,160 @@ print(X_tr_std.shape)
 
 """#### Scaled Silhouette Score for original data
 
+## PCA implementation: [paper](https://www.sciencedirect.com/science/article/pii/S1877050919321507)
+
+PCA  finds low dimensional approximations to the data by
+projecting the data onto linear subspaces
+
+Principal Components Analysis (PCA)
+1. Compute the sample covariance matrix Σ =b n
+−1 Pn
+i=1(Xi − Xn)(Xi − Xn)
+T
+.
+2. Compute the eigenvalues λ1 ≥ λ2 ≥ · · · and eigenvectors e1, e2, . . . , of Σ. b
+3. Choose a dimension k.
+4. Define the dimension reduced data Zi = Tk(Xi) = X +
+Pk
+j=1 βijej where βij =
+hXi − X, ej i.
 """
-
-
 
 from sklearn.metrics import silhouette_score
 kmeans_original_scale = cluster.KMeans(n_clusters=5, n_init=100, max_iter=200, init='k-means++', random_state=42).fit(X_tr_std)
 print('KMeans, original data, Scaled Silhouette Score: {}'.format(silhouette_score(X_tr_std, kmeans_original_scale.labels_, metric='euclidean')))
+
+from sklearn.decomposition import PCA
+# pca = PCA(n_components=5,svd_solver='auto')
+# scores = pca.fit_transform(X_tr_std) # u
+
+# PCA
+pca = PCA(n_components=5)
+scores = pca.fit_transform(data_reshaped)
+var_ratio = pca.explained_variance_ratio_
+values = pca.singular_values_
+
+print(var_ratio.shape)
+print(values)
+selected_components = scores[:,:i] # selects the components
+
+# Commented out IPython magic to ensure Python compatibility.
+# Calculate different performance metrics for various numbers of clusters
+range_n_clusters = list(range(5,10))
+columns = ['Number of clusters', 'Average Silhouette score', 'Calinski-Harabasz score', 'Davies-Bouldin score']
+scores_pca = pd.DataFrame(np.zeros((len(range_n_clusters), len(columns))), columns=columns)
+
+# 3D plots and different scores
+for count, n_clusters in enumerate(range_n_clusters):
+    # Create a subplot with 1 row and 2 columns
+    fig = plt.figure(figsize=[15, 6])
+    ax1 = fig.add_subplot(1, 2, 1)
+
+    # The 1st subplot is the silhouette plot
+    # The silhouette coefficient can range from -1, 1 but in this example all
+    # lie within [-0.1, 1]
+    ax1.set_xlim([-0.1, 1])
+    # The (n_clusters+1)*10 is for inserting blank space between silhouette
+    # plots of individual clusters, to demarcate them clearly.
+    ax1.set_ylim([0, len(selected_components) + (n_clusters + 1) * 10])
+
+    # Initialize the clusterer with n_clusters value and a random generator
+    # seed of 10 for reproducibility.
+    clusterer = cluster.KMeans(n_clusters=n_clusters, random_state=1)
+    cluster_labels = clusterer.fit_predict(selected_components)
+
+    # The silhouette_score gives the average value for all the samples.
+    # This gives a perspective into the density and separation of the formed
+    # clusters
+    silhouette_avg = silhouette_score(selected_components, cluster_labels)
+    
+    scores_temp = [n_clusters, silhouette_avg,
+                   # The resulting Calinski-Harabasz score.
+                   calinski_harabasz_score(data_reshaped, clusterer.labels_),
+                   # The resulting Davies-Bouldin score.
+                   # The minimum score is zero, and the lower values the better clustering performance.
+                   davies_bouldin_score(data_reshaped, clusterer.labels_)]
+        
+    scores_pca.iloc[[count]] = scores_temp
+
+    # Compute the silhouette scores for each sample
+    sample_silhouette_values = silhouette_samples(selected_components, cluster_labels)
+
+    y_lower = 10
+    for i in range(n_clusters):
+        # Aggregate the silhouette scores for samples belonging to
+        # cluster i, and sort them
+        ith_cluster_silhouette_values = sample_silhouette_values[cluster_labels == i]
+
+        ith_cluster_silhouette_values.sort()
+
+        size_cluster_i = ith_cluster_silhouette_values.shape[0]
+        y_upper = y_lower + size_cluster_i
+
+        color = cm.nipy_spectral(float(i) / n_clusters)
+        ax1.fill_betweenx(
+            np.arange(y_lower, y_upper),
+            0,
+            ith_cluster_silhouette_values,
+            facecolor=color,
+            edgecolor=color,
+            alpha=0.7,
+        )
+
+        # Label the silhouette plots with their cluster numbers at the middle
+        ax1.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+        # Compute the new y_lower for next plot
+        y_lower = y_upper + 10  # 10 for the 0 samples
+
+    ax1.set_title('The silhouette plot for the various clusters.')
+    ax1.set_xlabel('The silhouette coefficient values')
+    ax1.set_ylabel('Cluster label')
+
+    # The vertical line for average silhouette score of all the values
+    ax1.axvline(x=silhouette_avg, color='red', linestyle='--')
+
+    ax1.set_yticks([])  # Clear the yaxis labels / ticks
+    ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+
+    # 2nd Plot showing the actual clusters formed
+    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+    colors = cm.nipy_spectral(cluster_labels.astype(float) / n_clusters)
+    ax2.scatter(
+        selected_components[:, 0], selected_components[:, 1], selected_components[:, 2],
+        marker='.', s=30, lw=0, alpha=0.7, c=colors, edgecolor='k'
+    )
+
+    ax2.set_title('The visualization of the clustered data.')
+    ax2.set_xlabel('Feature space for the 1st feature')
+    ax2.set_ylabel('2nd feature')
+    ax2.set_zlabel('3rd feature')
+
+    plt.suptitle(
+        'Silhouette analysis for KMeans clustering on sample data with n_clusters = %d'
+#         % n_clusters,
+        fontsize=14,
+        fontweight='bold',
+    )
+    
+    fig.subplots_adjust(wspace=0, hspace=0)
+
+plt.show()
+
+
+
+"""# a. PCA -> K-means
+
+applying the K-means on top of PCA
+"""
+
+# K-means
+cl = cluster.KMeans(n_clusters=5) # Creating an object of the classifier
+components_num = 5
+param = cl.fit(scores[:,:components_num]) # Training
+img_c = cl.labels_ # Getting the labels of the classes
+img_cl = img_c.reshape(data_array[0,:,:].shape) # Reshaping the labels to a 3D array (single band)
+plot_data(img_cl, 'PCA_k_means.png')
 
 """## Let’s set up  Auto-encoderE: """
 
@@ -226,55 +382,204 @@ print(history.history.keys())
 print(len(history.history['loss']))
 train_loss_val = history.history['loss']
 test_loss_val = history.history['val_loss']
-
 train_loss = [i * 1000 for i in train_loss_val]
 test_loss  = [i * 1000 for i in test_loss_val]
 
-"""## plot the train and validation loss"""
+"""## Plot the train and validation loss"""
 
 pd.DataFrame(history.history).plot(figsize=(8,5))
 plt.ylabel('Loss * 1000')
 plt.xlabel('Epochs')
 plt.savefig("summarize history for loss.jpg")
 
+import tensorflow as tf
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+# Build the autoencoder
+encoding_dim = selected_components.shape[1] # same as the selected PCAs
 
+input_dim = Input(shape = (data_reshaped.shape[-1], ), name = 'InputLayer')
 
-pd.DataFrame(history.history).plot(figsize=(8,5))
-plt.ylabel('Loss')
-plt.xlabel('Epochs')
-plt.savefig("summarize history for loss.jpg")
+# Encoder layers
+encoded1 = Dense(100, activation = 'relu', name = 'EncodeLayer1')(input_dim)
+encoded2 = Dense(90, activation = 'relu', name = 'EncodeLayer2')(encoded1)
+encoded3 = Dense(85, activation = 'relu', name = 'EncodeLayer3')(encoded2)
+encoded4 = Dense(80, activation = 'relu', name = 'EncodeLayer4')(encoded3)
+encoded5 = Dense(75, activation = 'relu', name = 'EncodeLayer5')(encoded4)
+encoded6 = Dense(70, activation = 'relu', name = 'EncodeLayer6')(encoded5)
 
-"""## PCA implementation: [paper](https://www.sciencedirect.com/science/article/pii/S1877050919321507)
+# Coded part
+encoded7 = Dense(encoding_dim, activation = 'linear', name = 'CodeLayer')(encoded6)
 
-PCA  finds low dimensional approximations to the data by
-projecting the data onto linear subspaces
+# Decoder layers
+decoded1 = Dense(70, activation = 'relu', name = 'DecodeLayer1')(encoded7)
+decoded2 = Dense(75, activation = 'relu', name = 'DecodeLayer2')(decoded1)
+decoded3 = Dense(80, activation = 'relu', name = 'DecodeLayer3')(decoded2)
+decoded4 = Dense(85, activation = 'relu', name = 'DecodeLayer4')(decoded3)
+decoded5 = Dense(90, activation = 'relu', name = 'DecodeLayer5')(decoded4)
+decoded6 = Dense(100, activation = 'relu', name = 'DecodeLayer6')(decoded5)
 
-Principal Components Analysis (PCA)
-1. Compute the sample covariance matrix Σ =b n
-−1 Pn
-i=1(Xi − Xn)(Xi − Xn)
-T
-.
-2. Compute the eigenvalues λ1 ≥ λ2 ≥ · · · and eigenvectors e1, e2, . . . , of Σ. b
-3. Choose a dimension k.
-4. Define the dimension reduced data Zi = Tk(Xi) = X +
-Pk
-j=1 βijej where βij =
-hXi − X, ej i.
-"""
+decoded7 = Dense(data_reshaped.shape[-1], activation = 'sigmoid', name = 'OutputLayer')(decoded6)
 
-from sklearn.decomposition import PCA
-# pca = PCA(n_components=5,svd_solver='auto')
-# scores = pca.fit_transform(X_tr_std) # u
+# Combine encoder and deocder layers
+autoencoder = Model(inputs = input_dim, outputs = decoded7)
 
-# PCA
-pca = PCA(n_components=5)
-scores = pca.fit_transform(data_reshaped)
-var_ratio = pca.explained_variance_ratio_
-values = pca.singular_values_
+autoencoder.summary()
 
-print(var_ratio.shape)
-print(values)
+# Compile the model
+autoencoder.compile(optimizer = 'adam', 
+                    loss = 'mse', 
+                    metrics = [tf.keras.metrics.MeanSquaredLogarithmicError()]
+                    )
+
+# Callbacks
+# Early stopping
+early_stop = EarlyStopping(monitor = 'mean_squared_logarithmic_error',
+                            mode = 'min',
+                            min_delta = 0,
+                            patience = 5,
+                            restore_best_weights = True)
+
+# Checkpoint
+checkpoint = ModelCheckpoint(filepath = './checkpoint.h5', 
+                              monitor = 'mean_squared_logarithmic_error', 
+                              mode ='min', 
+                              save_best_only = True)
+
+# Tensorboard
+tensorboard = TensorBoard(log_dir='.\{}'.format(time()))
+
+# Fitting the model
+hist = autoencoder.fit(data_reshaped, 
+                        data_reshaped, 
+                        epochs = 100, 
+                        batch_size = 256, 
+                        shuffle = True, 
+                        callbacks=[early_stop,
+                                  checkpoint,
+                                  tensorboard])
+
+# Seperate the encoder part from the auto encoder model
+encoder = Model(inputs = input_dim, outputs = encoded7)
+
+# Summary
+# encoder.summary()
+
+# Get the data with the reduced dimesion
+data_ae = encoder.predict(data_reshaped)
+
+"""## Different performance metrics"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# Calculate different performance metrics for various numbers of clusters
+range_n_clusters = list(range(5,10))
+columns = ['Number of clusters', 'Average Silhouette score', 'Calinski-Harabasz score', 'Davies-Bouldin score']
+scores_pca = pd.DataFrame(np.zeros((len(range_n_clusters), len(columns))), columns=columns)
+scores_ae = pd.DataFrame(np.zeros((len(range_n_clusters), len(columns))), columns=columns)
+
+# 3D plots and different scores
+for count, n_clusters in enumerate(range_n_clusters):
+    # Create a subplot with 1 row and 2 columns
+    fig = plt.figure(figsize=[15, 6])
+    ax1 = fig.add_subplot(1, 2, 1)
+
+    # The 1st subplot is the silhouette plot
+    # The silhouette coefficient can range from -1, 1 but in this example all
+    # lie within [-0.1, 1]
+    ax1.set_xlim([-0.1, 1])
+    # The (n_clusters+1)*10 is for inserting blank space between silhouette
+    # plots of individual clusters, to demarcate them clearly.
+    ax1.set_ylim([0, len(codings) + (n_clusters + 1) * 10])
+
+    # Initialize the clusterer with n_clusters value and a random generator
+    # seed of 10 for reproducibility.
+    clusterer = cluster.KMeans(n_clusters=n_clusters, random_state=1)
+    cluster_labels = clusterer.fit_predict(codings)
+
+    # The silhouette_score gives the average value for all the samples.
+    # This gives a perspective into the density and separation of the formed
+    # clusters
+    silhouette_avg = silhouette_score(codings, cluster_labels)
+    
+    scores_temp = [n_clusters, silhouette_avg,
+                   # The resulting Calinski-Harabasz score.
+                   calinski_harabasz_score(data_reshaped, clusterer.labels_),
+                   # The resulting Davies-Bouldin score.
+                   # The minimum score is zero, and the lower values the better clustering performance.
+                   davies_bouldin_score(data_reshaped, clusterer.labels_)]
+    
+    scores_ae.iloc[[count]] = scores_temp
+
+    # Compute the silhouette scores for each sample
+    sample_silhouette_values = silhouette_samples(codings, cluster_labels)
+
+    y_lower = 10
+    for i in range(n_clusters):
+        # Aggregate the silhouette scores for samples belonging to
+        # cluster i, and sort them
+        ith_cluster_silhouette_values = sample_silhouette_values[cluster_labels == i]
+
+        ith_cluster_silhouette_values.sort()
+
+        size_cluster_i = ith_cluster_silhouette_values.shape[0]
+        y_upper = y_lower + size_cluster_i
+
+        color = cm.nipy_spectral(float(i) / n_clusters)
+        ax1.fill_betweenx(
+            np.arange(y_lower, y_upper),
+            0,
+            ith_cluster_silhouette_values,
+            facecolor=color,
+            edgecolor=color,
+            alpha=0.7,
+        )
+
+        # Label the silhouette plots with their cluster numbers at the middle
+        ax1.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+        # Compute the new y_lower for next plot
+        y_lower = y_upper + 10  # 10 for the 0 samples
+
+    ax1.set_title('The silhouette plot for the various clusters.')
+    ax1.set_xlabel('The silhouette coefficient values')
+    ax1.set_ylabel('Cluster label')
+
+    # The vertical line for average silhouette score of all the values
+    ax1.axvline(x=silhouette_avg, color='red', linestyle='--')
+
+    ax1.set_yticks([])  # Clear the yaxis labels / ticks
+    ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+
+    # 2nd Plot showing the actual clusters formed
+    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+    colors = cm.nipy_spectral(cluster_labels.astype(float) / n_clusters)
+    ax2.scatter(
+        codings[:, 0], codings[:, 1], codings[:, 2],
+        marker='.', s=30, lw=0, alpha=0.7, c=colors, edgecolor='k'
+    )
+
+    ax2.set_title('The visualization of the clustered data.')
+    ax2.set_xlabel('Feature space for the 1st feature')
+    ax2.set_ylabel('2nd feature')
+    ax2.set_zlabel('3rd feature')
+
+    plt.suptitle(
+        'Silhouette analysis for KMeans clustering on sample data with n_clusters = %d'
+#         % n_clusters,
+        fontsize=14,
+        fontweight='bold',
+    )
+    
+    fig.subplots_adjust(wspace=0, hspace=0)
+
+plt.show()
+
+from IPython.display import display, HTML
+display(HTML(scores_ae.to_html(index=False)))
+
+from IPython.display import display, HTML
+display(HTML(scores_ae.to_html(index=False)))
 
 """### function to plot and display the image"""
 
@@ -292,20 +597,7 @@ Clustering or cluster analysis is a machine learning technique, which groups the
 
 When choosing a clustering algorithm, you should consider whether the algorithm scales to your dataset. Datasets in machine learning can have millions of examples, but not all clustering algorithms scale efficiently. Many clustering algorithms work by computing the similarity between all pairs of examples. This means their runtime increases as the square of the number of examples , denoted as n in O(nxn) complexity notation.  O(nxn) algorithms are not practical when the number of examples are in millions. Here, we focuses on the **`k-means`** algorithm, which has a complexity of O(n), meaning that the algorithm scales linearly with .
 
-# a. PCA -> K-means
-
-applying the K-means on top of PCA
-"""
-
-# K-means
-cl = cluster.KMeans(n_clusters=5) # Creating an object of the classifier
-components_num = 5
-param = cl.fit(scores[:,:components_num]) # Training
-img_c = cl.labels_ # Getting the labels of the classes
-img_cl = img_c.reshape(data_array[0,:,:].shape) # Reshaping the labels to a 3D array (single band)
-plot_data(img_cl, 'PCA_k_means.png')
-
-"""### Standardization
+### Standardization
 As aforementioned, the standardization of data will ultimately bring all features to the same scale and bringing the mean to zero and the standard deviation to 1
 """
 
@@ -765,3 +1057,4 @@ visualizer = KElbowVisualizer(model, k=(3,9))
 visualizer.fit(scores[:,:components_num])        # Fit the data to the visualizer
 visualizer.show()        # Finalize and render the figure
 
+# five type of faces
